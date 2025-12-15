@@ -1,13 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Modal, Alert, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as WebBrowser from 'expo-web-browser';
-
-const API_BASE = 'http://10.75.26.41:5000/api/auth';
+import { AuthAPI, useAuth, isValidEmail } from '../app/utilities';
 
 export default function Login() {
+  const { login, isAuthenticated, isLoading: authLoading, error: authError, clearError } = useAuth();
+  
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [passwordVisible, setPasswordVisible] = useState(false);
@@ -20,27 +20,39 @@ export default function Login() {
   const [forgotLoading, setForgotLoading] = useState(false);
   const [forgotSuccess, setForgotSuccess] = useState(false);
 
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (isAuthenticated && !authLoading) {
+      router.replace('/(tabs)/dashboard');
+    }
+  }, [isAuthenticated, authLoading]);
+
+  // Show auth errors
+  useEffect(() => {
+    if (authError) {
+      setError(authError);
+      clearError();
+    }
+  }, [authError]);
+
   const handleLogin = async () => {
     if (!email || !password) {
       setError('Please enter email and password');
       return;
     }
+    
+    if (!isValidEmail(email)) {
+      setError('Please enter a valid email address');
+      return;
+    }
+    
     setError('');
     setLoading(true);
+    
     try {
-      const response = await fetch(`${API_BASE}/login`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email, password }),
-      });
-      const data = await response.json();
-      if (response.ok) {
-        await AsyncStorage.setItem('userData', JSON.stringify(data.user));
-        router.push('/(tabs)/dashboard');
-      } else {
-        setError(data.error);
+      const success = await login({ email, password });
+      if (success) {
+        router.replace('/(tabs)/dashboard');
       }
     } catch (err) {
       setError('Network error. Please try again.');
@@ -55,28 +67,19 @@ export default function Login() {
       return;
     }
     
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(forgotEmail)) {
+    if (!isValidEmail(forgotEmail)) {
       Alert.alert('Error', 'Please enter a valid email address');
       return;
     }
 
     setForgotLoading(true);
     try {
-      const response = await fetch(`${API_BASE}/forgot-password`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email: forgotEmail }),
-      });
+      const result = await AuthAPI.forgotPassword(forgotEmail);
       
-      const data = await response.json();
-      
-      if (response.ok) {
+      if (result.success) {
         setForgotSuccess(true);
       } else {
-        Alert.alert('Error', data.error || 'Failed to send reset email');
+        Alert.alert('Error', result.error || 'Failed to send reset email');
       }
     } catch (err) {
       Alert.alert('Error', 'Network error. Please try again.');
@@ -95,7 +98,7 @@ export default function Login() {
     try {
       setLoading(true);
       const result = await WebBrowser.openAuthSessionAsync(
-        `${API_BASE}/google`,
+        AuthAPI.getGoogleAuthUrl(),
         'weapon-detection://auth'
       );
       
@@ -105,9 +108,9 @@ export default function Login() {
         const userData = url.searchParams.get('user');
         
         if (token && userData) {
-          await AsyncStorage.setItem('userData', userData);
-          await AsyncStorage.setItem('authToken', token);
-          router.push('/(tabs)/dashboard');
+          // Let the auth context handle storage
+          Alert.alert('Success', 'Google sign-in successful!');
+          router.replace('/(tabs)/dashboard');
         }
       }
     } catch (err) {

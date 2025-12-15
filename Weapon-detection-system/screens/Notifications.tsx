@@ -10,19 +10,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-
-const API_BASE = 'http://10.75.26.41:5000/api/notifications';
-
-interface NotificationItem {
-  id: string;
-  type: 'suspicious' | 'vehicle' | 'loitering' | 'package' | 'camera' | 'weapon' | 'system';
-  title: string;
-  time: string;
-  description: string;
-  icon: string;
-  isRead: boolean;
-  location?: string;
-}
+import { NotificationsAPI, NotificationItem, getNotificationTypeConfig } from '../app/utilities';
 
 // Type configuration for icons and colors
 const typeConfig: Record<string, { iconName: keyof typeof Ionicons.glyphMap; iconColor: string; titleColor: string }> = {
@@ -72,14 +60,13 @@ export default function Notifications() {
   const fetchNotifications = async () => {
     try {
       setError(null);
-      const response = await fetch(API_BASE);
+      const result = await NotificationsAPI.getAll();
       
-      if (!response.ok) {
+      if (!result.success) {
         throw new Error('Failed to fetch notifications');
       }
       
-      const data = await response.json();
-      setNotifications(data);
+      if (result.data) setNotifications(result.data);
     } catch (err) {
       console.error('Notifications fetch error:', err);
       setError('Failed to load notifications');

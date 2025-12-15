@@ -40,11 +40,19 @@
           }
         }
       ],
-      "expo-video"
+      "expo-video",
+      "react-native-vlc-media-player"
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "fea1e43b-2c6e-4c9c-9389-a00ec45159fb"
+      }
+    },
+    "owner": "muzammil561"
   }
 }

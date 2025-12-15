@@ -8,26 +8,16 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Animated,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-
-const API_BASE = 'http://10.75.26.41:5000/api/dashboard';
-
-interface Stats {
-  totalWeapons: number;
-  alertsSent: number;
-  accuracy: number;
-}
-
-interface Activity {
-  id: string;
-  type: 'high' | 'medium' | 'low';
-  message: string;
-  time: string;
-}
+import { router } from 'expo-router';
+import { DashboardAPI, DashboardStats, Activity, useAuth } from '../app/utilities';
 
 export default function Dashboard() {
-  const [stats, setStats] = useState<Stats>({
+  const { user, isAuthenticated, logout } = useAuth();
+  
+  const [stats, setStats] = useState<DashboardStats>({
     totalWeapons: 0,
     alertsSent: 0,
     accuracy: 0,
@@ -41,24 +31,45 @@ export default function Dashboard() {
   const fadeAnim = useState(new Animated.Value(0))[0];
   const slideAnim = useState(new Animated.Value(50))[0];
 
+  // Redirect if not authenticated
+  useEffect(() => {
+    if (!isAuthenticated) {
+      router.replace('/');
+    }
+  }, [isAuthenticated]);
+
+  const handleLogout = () => {
+    Alert.alert(
+      'Logout',
+      'Are you sure you want to logout?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Logout', 
+          style: 'destructive',
+          onPress: async () => {
+            await logout();
+          }
+        }
+      ]
+    );
+  };
+
   const fetchData = async () => {
     try {
       setError(null);
       
-      const [statsRes, activityRes] = await Promise.all([
-        fetch(`${API_BASE}/stats`),
-        fetch(`${API_BASE}/activity`),
+      const [statsResult, activityResult] = await Promise.all([
+        DashboardAPI.getStats(),
+        DashboardAPI.getActivity(),
       ]);
 
-      if (!statsRes.ok || !activityRes.ok) {
+      if (!statsResult.success || !activityResult.success) {
         throw new Error('Failed to fetch dashboard data');
       }
 
-      const statsData = await statsRes.json();
-      const activityData = await activityRes.json();
-
-      setStats(statsData);
-      setActivities(activityData);
+      if (statsResult.data) setStats(statsResult.data);
+      if (activityResult.data) setActivities(activityResult.data);
 
       // Animate cards on load
       Animated.parallel([
@@ -137,10 +148,13 @@ export default function Dashboard() {
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <View style={styles.headerPlaceholder} />
+        <View style={styles.headerLeft}>
+          <Text style={styles.welcomeText}>Welcome,</Text>
+          <Text style={styles.userName}>{user?.name || 'User'}</Text>
+        </View>
         <Text style={styles.headerTitle}>Dashboard</Text>
-        <TouchableOpacity style={styles.settingsButton}>
-          <Ionicons name="settings-outline" size={24} color="#FFFFFF" />
+        <TouchableOpacity style={styles.settingsButton} onPress={handleLogout}>
+          <Ionicons name="log-out-outline" size={24} color="#FFFFFF" />
         </TouchableOpacity>
       </View>
 
@@ -275,8 +289,17 @@ const styles = StyleSheet.create({
     paddingBottom: 16,
     backgroundColor: '#0C1B2A',
   },
-  headerPlaceholder: {
-    width: 40,
+  headerLeft: {
+    flex: 1,
+  },
+  welcomeText: {
+    fontSize: 12,
+    color: '#94A3B8',
+  },
+  userName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
   headerTitle: {
     fontSize: 20,

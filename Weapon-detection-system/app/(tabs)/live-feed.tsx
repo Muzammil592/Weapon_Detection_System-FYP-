@@ -1,76 +1,36 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity, Platform } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { WebView } from 'react-native-webview';
+import { VLCPlayer } from 'react-native-vlc-media-player';
 import { Ionicons } from '@expo/vector-icons';
+import { UserStorage, Camera, API_CONFIG } from '../utilities';
 
-const API_BASE = 'http://10.75.26.41:5000';
-
-interface Camera {
-  camera_name: string;
-  stream_url: string;
-  location: string;
-}
+// RTSP URL - update this with your camera credentials
+const RTSP_URL = 'rtsp://admin:Pakistan1122@192.168.1.64:554/Streaming/Channels/101';
 
 export default function LiveFeed() {
   const [camera, setCamera] = useState<Camera | null>(null);
   const [loading, setLoading] = useState(true);
   const [streamError, setStreamError] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isBuffering, setIsBuffering] = useState(false);
   const [attempts, setAttempts] = useState(0);
-  const [streamStatus, setStreamStatus] = useState<'checking' | 'ready' | 'error'>('checking');
-
-  // Check if the HLS stream is ready on the server
-  const checkStreamStatus = useCallback(async () => {
-    try {
-      const response = await fetch(`${API_BASE}/api/stream/status`);
-      const data = await response.json();
-      if (data.isRunning && data.hlsReady) {
-        setStreamStatus('ready');
-        return true;
-      } else if (data.isRunning) {
-        // Stream is running but HLS not ready yet
-        setStreamStatus('checking');
-        return false;
-      } else {
-        // Try to start the stream
-        await fetch(`${API_BASE}/api/stream/start`, { method: 'POST' });
-        setStreamStatus('checking');
-        return false;
-      }
-    } catch (error) {
-      console.error('Stream status check failed:', error);
-      setStreamStatus('error');
-      return false;
-    }
-  }, []);
+  const vlcRef = useRef<any>(null);
 
   useEffect(() => {
     const loadCamera = async () => {
       try {
-        const raw = await AsyncStorage.getItem('userData');
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          const userCam = parsed?.camera;
-          if (userCam?.stream_url) {
-            setCamera({
-              camera_name: userCam.camera_name || 'CCTV Camera',
-              stream_url: userCam.stream_url,
-              location: userCam.location || 'Unknown Location',
-            });
-          } else {
-            // Default HLS stream
-            setCamera({
-              camera_name: 'CCTV Camera',
-              stream_url: `${API_BASE}/streams/stream.m3u8`,
-              location: 'Main Entrance',
-            });
-          }
+        const userData = await UserStorage.getUser();
+        if (userData?.camera?.stream_url) {
+          setCamera({
+            camera_name: userData.camera.camera_name || 'CCTV Camera',
+            stream_url: userData.camera.stream_url,
+            location: userData.camera.location || 'Unknown Location',
+          });
         } else {
-          // Default HLS stream
+          // Default RTSP stream
           setCamera({
             camera_name: 'CCTV Camera',
-            stream_url: `${API_BASE}/streams/stream.m3u8`,
+            stream_url: RTSP_URL,
             location: 'Main Entrance',
           });
         }
@@ -78,7 +38,7 @@ export default function LiveFeed() {
         console.error('Error loading camera:', error);
         setCamera({
           camera_name: 'CCTV Camera',
-          stream_url: `${API_BASE}/streams/stream.m3u8`,
+          stream_url: RTSP_URL,
           location: 'Main Entrance',
         });
       } finally {
@@ -88,183 +48,38 @@ export default function LiveFeed() {
     loadCamera();
   }, [attempts]);
 
-  // Check stream status periodically until ready
-  useEffect(() => {
-    if (!loading && camera) {
-      checkStreamStatus();
-      const interval = setInterval(async () => {
-        const ready = await checkStreamStatus();
-        if (ready) {
-          clearInterval(interval);
-        }
-      }, 3000);
-      return () => clearInterval(interval);
-    }
-  }, [loading, camera, checkStreamStatus]);
-
   const manualReload = useCallback(() => {
     setStreamError(null);
     setIsPlaying(false);
-    setStreamStatus('checking');
+    setIsBuffering(true);
     setAttempts(a => a + 1);
-    checkStreamStatus();
-  }, [checkStreamStatus]);
+  }, []);
 
-  const buildHtml = (streamUrl: string) => {
-    return `<!DOCTYPE html>
-<html>
-<head>
-  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { 
-      background: #000; 
-      display: flex; 
-      align-items: center; 
-      justify-content: center; 
-      min-height: 100vh;
-      overflow: hidden;
-    }
-    #video-container {
-      width: 100%;
-      height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-    video { 
-      width: 100%; 
-      height: 100%; 
-      object-fit: contain;
-      background: #000;
-    }
-    .error {
-      color: #ff4444;
-      text-align: center;
-      padding: 20px;
-      font-family: -apple-system, sans-serif;
-      font-size: 14px;
-    }
-    .loading {
-      color: #888;
-      text-align: center;
-      font-family: -apple-system, sans-serif;
-      font-size: 14px;
-    }
-  </style>
-  <script src="https://cdn.jsdelivr.net/npm/hls.js@1.4.12/dist/hls.min.js"></script>
-</head>
-<body>
-  <div id="video-container">
-    <video id="video" controls autoplay muted playsinline></video>
-  </div>
-  <script>
-    const video = document.getElementById('video');
-    const streamUrl = '${streamUrl}';
-    let hls = null;
-    let retryCount = 0;
-    const maxRetries = 5;
-    
-    function post(type, payload) {
-      try {
-        window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({ type, payload }));
-      } catch(e) {}
-    }
-    
-    function initPlayer() {
-      if (hls) {
-        hls.destroy();
-        hls = null;
-      }
-      
-      if (Hls.isSupported()) {
-        hls = new Hls({
-          enableWorker: true,
-          lowLatencyMode: true,
-          backBufferLength: 30,
-          maxBufferLength: 10,
-          maxMaxBufferLength: 30,
-          liveSyncDurationCount: 1,
-          liveMaxLatencyDurationCount: 3,
-          liveDurationInfinity: true,
-          manifestLoadingTimeOut: 10000,
-          manifestLoadingMaxRetry: 3,
-          levelLoadingTimeOut: 10000,
-          fragLoadingTimeOut: 20000,
-        });
-        
-        hls.loadSource(streamUrl);
-        hls.attachMedia(video);
-        
-        hls.on(Hls.Events.MANIFEST_PARSED, function() {
-          post('status', 'manifest_parsed');
-          video.play().then(() => {
-            post('playing', true);
-            retryCount = 0;
-          }).catch(e => {
-            post('play_error', e.message);
-          });
-        });
-        
-        hls.on(Hls.Events.ERROR, function(event, data) {
-          post('hls_error', { type: data.type, details: data.details, fatal: data.fatal });
-          
-          if (data.fatal) {
-            switch(data.type) {
-              case Hls.ErrorTypes.NETWORK_ERROR:
-                if (retryCount < maxRetries) {
-                  retryCount++;
-                  post('status', 'retrying_' + retryCount);
-                  setTimeout(() => {
-                    hls.loadSource(streamUrl);
-                  }, 2000);
-                } else {
-                  post('fatal', 'Network error - stream not available');
-                }
-                break;
-              case Hls.ErrorTypes.MEDIA_ERROR:
-                post('status', 'recovering_media_error');
-                hls.recoverMediaError();
-                break;
-              default:
-                post('fatal', 'Fatal playback error');
-                break;
-            }
-          }
-        });
-        
-        hls.on(Hls.Events.FRAG_LOADED, function() {
-          post('buffering', false);
-        });
-        
-        hls.on(Hls.Events.FRAG_LOADING, function() {
-          post('buffering', true);
-        });
-        
-      } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-        // Native HLS support (Safari/iOS)
-        video.src = streamUrl;
-        video.addEventListener('loadedmetadata', () => {
-          post('status', 'native_hls_loaded');
-          video.play().catch(e => post('play_error', e.message));
-        });
-        video.addEventListener('playing', () => post('playing', true));
-        video.addEventListener('error', () => post('fatal', 'Video playback error'));
-      } else {
-        post('fatal', 'HLS not supported');
-      }
-    }
-    
-    video.addEventListener('playing', () => post('playing', true));
-    video.addEventListener('pause', () => post('playing', false));
-    video.addEventListener('waiting', () => post('buffering', true));
-    video.addEventListener('canplay', () => post('buffering', false));
-    
-    // Start player
-    initPlayer();
-  </script>
-</body>
-</html>`;
+  const onVLCPlaying = () => {
+    setIsPlaying(true);
+    setIsBuffering(false);
+    setStreamError(null);
+  };
+
+  const onVLCBuffering = () => {
+    setIsBuffering(true);
+  };
+
+  const onVLCStopped = () => {
+    setIsPlaying(false);
+    setIsBuffering(false);
+  };
+
+  const onVLCError = (e: any) => {
+    console.error('VLC Error:', e);
+    setStreamError('Failed to connect to camera stream');
+    setIsPlaying(false);
+    setIsBuffering(false);
+  };
+
+  const onVLCEnded = () => {
+    setIsPlaying(false);
+    setIsBuffering(false);
   };
 
   if (loading) {
@@ -326,63 +141,65 @@ export default function LiveFeed() {
         </View>
       )}
 
-      {streamStatus === 'checking' && !streamError && (
+      {isBuffering && !streamError && (
         <View style={styles.statusBanner}>
           <ActivityIndicator size="small" color="#3EA0FF" />
-          <Text style={styles.statusText}>Connecting to stream server...</Text>
+          <Text style={styles.statusText}>Connecting to camera stream...</Text>
         </View>
       )}
 
       <View style={styles.videoContainer}>
-        {streamStatus === 'ready' ? (
-          <WebView
-            key={`stream-${attempts}`}
-            source={{ html: buildHtml(camera.stream_url) }}
-            style={styles.video}
-            javaScriptEnabled
-            domStorageEnabled
-            allowsFullscreenVideo
-            mediaPlaybackRequiresUserAction={false}
-            allowsInlineMediaPlayback
-            mixedContentMode="always"
-            onMessage={(event) => {
-              try {
-                const msg = JSON.parse(event.nativeEvent.data);
-                console.log('WebView message:', msg);
-                
-                if (msg.type === 'playing') {
-                  setIsPlaying(msg.payload);
-                  if (msg.payload) {
-                    setStreamError(null);
-                  }
-                }
-                if (msg.type === 'fatal') {
-                  setStreamError(msg.payload || 'Stream connection failed');
-                  setIsPlaying(false);
-                }
-                if (msg.type === 'status') {
-                  console.log('Stream status:', msg.payload);
-                }
-              } catch (e) {
-                // Ignore parse errors
-              }
-            }}
-            onError={(e) => {
-              console.error('WebView error:', e);
-              setStreamError('Failed to load video player');
-            }}
-          />
-        ) : (
+        <VLCPlayer
+          key={`stream-${attempts}`}
+          ref={vlcRef}
+          style={styles.video}
+          source={{
+            uri: camera.stream_url,
+            initOptions: [
+              // Network & Buffer Settings
+              '--network-caching=300',        // Buffer 300ms for stability
+              '--rtsp-tcp',                   // Use TCP for reliable delivery
+              '--rtsp-frame-buffer-size=500000', // Large frame buffer
+              '--rtsp-caching=100',           // RTSP-specific cache
+              '--live-caching=100',           // Live stream cache
+              
+              // Performance Optimization
+              '--clock-jitter=0',             // No clock jitter
+              '--clock-synchro=0',            // Disable clock sync for lower latency
+              '--drop-late-frames',           // Drop frames if late
+              '--skip-frames',                // Allow frame skipping
+              
+              // Codec Settings
+              '--avcodec-fast',               // Fast decoding
+              '--avcodec-threads=4',          // Multi-threaded decoding
+              '--avcodec-skiploopfilter=4',   // Skip loop filter for speed
+              
+              // Disable Unused Features
+              '--no-audio',                   // No audio needed for CCTV
+              '--no-spu',                     // No subtitles
+              '--no-osd',                     // No on-screen display
+              '--no-stats',                   // No statistics
+              '--no-snapshot-preview',        // No snapshot preview
+              
+              // Connection Settings
+              '--http-reconnect',             // Auto reconnect
+              '--rtsp-user=admin',            // RTSP auth user
+              '--rtsp-pwd=Pakistan1122',      // RTSP auth password
+            ],
+          }}
+          autoplay={true}
+          onPlaying={onVLCPlaying}
+          onBuffering={onVLCBuffering}
+          onStopped={onVLCStopped}
+          onError={onVLCError}
+          onEnded={onVLCEnded}
+          resizeMode="contain"
+          repeat={true}
+        />
+        {isBuffering && (
           <View style={styles.loadingOverlay}>
             <ActivityIndicator size="large" color="#3EA0FF" />
-            <Text style={styles.connectingText}>
-              {streamStatus === 'error' ? 'Connection failed' : 'Waiting for stream...'}
-            </Text>
-            {streamStatus === 'error' && (
-              <TouchableOpacity onPress={manualReload} style={styles.smallRetryBtn}>
-                <Text style={styles.smallRetryText}>Retry</Text>
-              </TouchableOpacity>
-            )}
+            <Text style={styles.connectingText}>Buffering...</Text>
           </View>
         )}
       </View>
@@ -390,22 +207,26 @@ export default function LiveFeed() {
       <View style={styles.infoCard}>
         <View style={styles.infoRow}>
           <Text style={styles.infoLabel}>Stream Type:</Text>
-          <Text style={styles.infoValue}>HLS (Expo Go Compatible)</Text>
+          <Text style={styles.infoValue}>RTSP via VLC (Direct)</Text>
         </View>
         <View style={styles.infoRow}>
-          <Text style={styles.infoLabel}>Server:</Text>
-          <Text style={styles.infoValue}>{streamStatus === 'ready' ? 'Connected' : 'Connecting...'}</Text>
+          <Text style={styles.infoLabel}>Protocol:</Text>
+          <Text style={styles.infoValue}>TCP (Reliable)</Text>
         </View>
         <View style={styles.infoRow}>
-          <Text style={styles.infoLabel}>Playback:</Text>
+          <Text style={styles.infoLabel}>Buffer:</Text>
+          <Text style={styles.infoValue}>300ms (Low Latency)</Text>
+        </View>
+        <View style={styles.infoRow}>
+          <Text style={styles.infoLabel}>Status:</Text>
           <Text style={[styles.infoValue, { color: isPlaying ? '#4ED47A' : streamError ? '#FF4C4C' : '#FF9F43' }]}>
-            {isPlaying ? 'Playing' : streamError ? 'Error' : 'Buffering...'}
+            {isPlaying ? 'Playing' : streamError ? 'Error' : 'Connecting...'}
           </Text>
         </View>
       </View>
 
       <Text style={styles.helperText}>
-        Stream is converted from RTSP to HLS on the server
+        Optimized RTSP stream • Requires Development Build
       </Text>
     </View>
   );

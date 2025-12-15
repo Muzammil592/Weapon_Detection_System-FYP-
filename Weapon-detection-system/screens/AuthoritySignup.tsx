@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
 import { router } from 'expo-router';
+import { AuthAPI } from '../app/utilities';
 
 export default function AuthoritySignup() {
   const [fullName, setFullName] = useState('');
@@ -12,6 +13,7 @@ export default function AuthoritySignup() {
   const [passwordVisible, setPasswordVisible] = useState(false);
   const [confirmPasswordVisible, setConfirmPasswordVisible] = useState(false);
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
   const handleCreateAccount = async () => {
     if (password !== confirmPassword) {
@@ -19,28 +21,24 @@ export default function AuthoritySignup() {
       return;
     }
     setError('');
+    setLoading(true);
     try {
-      const response = await fetch('http://10.75.26.41:5000/api/auth/signup/authority', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          name: fullName,
-          email,
-          officerId,
-          stationName,
-          password,
-        }),
+      const result = await AuthAPI.signupAuthority({
+        name: fullName,
+        email,
+        officerId,
+        stationName,
+        password,
       });
-      const data = await response.json();
-      if (response.ok) {
+      if (result.success) {
         router.push('/');
       } else {
-        setError(data.error);
+        setError(result.error || 'Registration failed');
       }
     } catch (err) {
       setError('Network error. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
