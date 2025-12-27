@@ -19,22 +19,9 @@ const notificationsRoutes = require('./routes/notifications');
 // Middleware
 const { notFound, errorHandler } = require('./middleware/errorHandler');
 
-// RTSP Converter (optional - only if file exists)
-let RTSPtoHLSConverter;
-let streamConverter;
-try {
-  RTSPtoHLSConverter = require('./rtsp-converter');
-  streamConverter = new RTSPtoHLSConverter();
-} catch (e) {
-  console.log('RTSP converter not available');
-}
-
 const app = express();
 const PORT = process.env.PORT || 5000;
 const API_HOST = process.env.API_HOST || '192.168.100.35';
-
-// RTSP Stream Configuration
-const RTSP_URL = process.env.RTSP_URL || 'rtsp://admin:Pakistan1122@192.168.1.64:554/Streaming/Channels/101';
 
 // Security Middleware
 app.use(helmet({
@@ -87,31 +74,6 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Stream control endpoints
-app.post('/api/stream/start', (req, res) => {
-  if (!streamConverter) {
-    return res.status(503).json({ success: false, error: 'Stream converter not available' });
-  }
-  const rtspUrl = req.body.rtspUrl || RTSP_URL;
-  streamConverter.start(rtspUrl);
-  res.json({ success: true, message: 'Stream starting...', hlsUrl: '/streams/stream.m3u8' });
-});
-
-app.post('/api/stream/stop', (req, res) => {
-  if (!streamConverter) {
-    return res.status(503).json({ success: false, error: 'Stream converter not available' });
-  }
-  streamConverter.stop();
-  res.json({ success: true, message: 'Stream stopped' });
-});
-
-app.get('/api/stream/status', (req, res) => {
-  if (!streamConverter) {
-    return res.json({ isRunning: false, hlsReady: false, error: 'Stream converter not available' });
-  }
-  res.json(streamConverter.getStatus());
-});
-
 // Error Handling
 app.use(notFound);
 app.use(errorHandler);
@@ -139,11 +101,7 @@ const startServer = async () => {
       console.log(`🚀 Server running on http://${API_HOST}:${PORT}`);
       console.log(`📍 Environment: ${process.env.NODE_ENV || 'development'}`);
       
-      // Auto-start RTSP to HLS stream
-      if (streamConverter) {
-        console.log('📹 Starting RTSP stream conversion...');
-        streamConverter.start(RTSP_URL);
-      }
+      // Database connected successfully
     });
   } catch (error) {
     console.error('❌ Failed to start server:', error.message);
@@ -161,9 +119,6 @@ process.on('unhandledRejection', (err) => {
 // Graceful shutdown
 process.on('SIGTERM', () => {
   console.log('SIGTERM received. Shutting down gracefully...');
-  if (streamConverter) {
-    streamConverter.stop();
-  }
   mongoose.connection.close(false, () => {
     console.log('MongoDB connection closed.');
     process.exit(0);
