@@ -147,11 +147,11 @@ export default function LiveFeedScreen() {
               uri: camera.stream_url,
               initOptions: [
                 '--rtsp-tcp',              // Required for Emulator NAT
-                '--network-caching=2000',  // Higher buffer for emulator lag
-                '--live-caching=2000',
+                '--network-caching=500',   // Reduced buffer for faster start
+                '--live-caching=500',
                 '--avcodec-hw=none',       // Disable HW acceleration (Buggy on Emulators)
                 '--no-audio',              // Speed up connection
-                '--rtsp-frame-buffer-size=100000',
+                '--rtsp-frame-buffer-size=50000',
               ],
             }}
             onPlaying={() => {

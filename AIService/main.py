@@ -6,6 +6,7 @@ import requests
 import time
 from datetime import datetime
 import os
+import threading
 
 app = FastAPI(title="Weapon Detection AI Service")
 
@@ -25,7 +26,10 @@ DUPLICATE_TIME_WINDOW = 10  # seconds
 
 model = None
 detection_active = False
-last_detections = {}  # weapon_type -> timestamp
+last_detections = {}
+
+latest_frame = None
+frame_lock = threading.Lock()
 
 # ------------------ Schemas ------------------
 
@@ -46,7 +50,7 @@ def load_model():
 # ------------------ Detection Logic ------------------
 
 def detect_weapons(frame):
-    results = model(frame, conf=CONFIDENCE_THRESHOLD,verbose=True)
+    results = model(frame, conf=CONFIDENCE_THRESHOLD, verbose=True)
     detections = []
 
     for result in results:
@@ -58,7 +62,7 @@ def detect_weapons(frame):
             conf = float(box.conf)
             class_name = model.names[cls]
 
-            print(f"Detected: {class_name} with conf {conf}")  # Debug print
+            print(f"Detected: {class_name} with conf {conf}")
 
             if class_name.lower() in ['knife', 'pistol', 'gun']:
                 detections.append({
@@ -85,22 +89,51 @@ def send_detection_to_backend(weapon_type, location, confidence, user_id=None):
     except Exception as e:
         print("❌ Request failed:", e)
 
+# ------------------ Frame Grabber (NEW) ------------------
+
+def frame_grabber(rtsp_url):
+    global latest_frame, detection_active
+
+    cap = cv2.VideoCapture(rtsp_url)
+    if not cap.isOpened():
+        print("❌ Unable to open RTSP stream")
+        detection_active = False
+        return
+
+    print("📥 Frame grabber started")
+
+    while detection_active:
+        ret, frame = cap.read()
+        if not ret:
+            continue
+
+        with frame_lock:
+            latest_frame = frame
+
+    cap.release()
+    print("📥 Frame grabber stopped")
+
 # ------------------ Stream Processing ------------------
 
 def process_stream(rtsp_url, location, user_id=None):
     global detection_active, last_detections
 
-    cap = cv2.VideoCapture(rtsp_url)
-    if not cap.isOpened():
-        print("❌ Unable to open RTSP stream")
-        return
+    print("🎥 Detection started (latest-frame mode)")
 
-    print("🎥 Stream started")
+    grabber_thread = threading.Thread(
+        target=frame_grabber,
+        args=(rtsp_url,),
+        daemon=True
+    )
+    grabber_thread.start()
 
     while detection_active:
-        ret, frame = cap.read()
-        if not ret:
-            break
+        with frame_lock:
+            frame = latest_frame
+
+        if frame is None:
+            time.sleep(0.01)
+            continue
 
         detections = detect_weapons(frame)
         current_time = time.time()
@@ -116,8 +149,7 @@ def process_stream(rtsp_url, location, user_id=None):
             last_detections[weapon_type] = current_time
             send_detection_to_backend(weapon_type, location, confidence, user_id)
 
-    cap.release()
-    print("🛑 Stream stopped")
+    print("🛑 Detection stopped")
 
 # ------------------ API ------------------
 
