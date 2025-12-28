@@ -3,21 +3,8 @@
  * Handles notification operations
  */
 
-// In-memory storage (use MongoDB in production)
-let notifications = [];
 
-// Default notifications for new users
-const getDefaultNotifications = () => [
-  {
-    id: '1',
-    type: 'system',
-    title: 'Welcome to Weapon Detection System',
-    time: new Date().toLocaleTimeString(),
-    description: 'Your security monitoring system is now active.',
-    icon: 'shield-checkmark',
-    isRead: false
-  }
-];
+const Notification = require('../models/Notification');
 
 /**
  * @desc    Get all notifications
@@ -26,18 +13,25 @@ const getDefaultNotifications = () => [
  */
 const getNotifications = async (req, res, next) => {
   try {
-    const userId = req.user?._id?.toString();
-    
-    // Filter notifications for user or return all if no auth
-    let userNotifications = notifications.filter(n => !n.userId || n.userId === userId);
-    
-    // Return default if empty
-    if (userNotifications.length === 0) {
-      userNotifications = getDefaultNotifications();
-    }
+    // Debug: Log headers and user info
+    console.log('--- NOTIFICATIONS DEBUG ---');
+    console.log('Headers:', req.headers);
+    console.log('User:', req.user);
 
-    res.json(userNotifications);
+    // Fetch all notifications from MongoDB, newest first
+    const notifications = await Notification.find({})
+      .sort({ createdAt: -1 })
+      .lean();
+    // Map MongoDB _id to id and createdAt to time for frontend compatibility
+    const mapped = notifications.map(n => ({
+      ...n,
+      id: n._id?.toString(),
+      time: n.createdAt ? new Date(n.createdAt).toLocaleString() : '',
+    }));
+    console.log('Notifications returned:', mapped.length);
+    res.json(mapped);
   } catch (error) {
+    console.error('Error in getNotifications:', error);
     next(error);
   }
 };

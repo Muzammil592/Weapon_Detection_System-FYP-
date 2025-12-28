@@ -6,7 +6,7 @@
 // Environment configuration
 const ENV = {
   development: {
-    API_HOST: '192.168.100.35',
+    API_HOST: '10.0.2.2', // Android emulator localhost alias
     API_PORT: '5000',
   },
   production: {

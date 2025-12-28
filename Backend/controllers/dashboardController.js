@@ -4,6 +4,7 @@
  */
 
 const User = require('../models/User');
+const Notification = require('../models/Notification');
 
 // Simulated detection data (in production, this would come from ML model)
 let detectionStats = {
@@ -21,11 +22,15 @@ let activities = [];
  */
 const getStats = async (req, res, next) => {
   try {
-    // In production, fetch from database based on user
+    // Get actual counts from database
+    const totalWeapons = await Notification.countDocuments({ type: 'weapon' });
+    const alertsSent = await Notification.countDocuments({});
+    const accuracy = 0.98; // This could be calculated based on actual detection accuracy
+
     const stats = {
-      totalWeapons: detectionStats.totalWeapons,
-      alertsSent: detectionStats.alertsSent,
-      accuracy: detectionStats.accuracy,
+      totalWeapons,
+      alertsSent,
+      accuracy,
       lastUpdated: new Date().toISOString()
     };
 
@@ -42,15 +47,18 @@ const getStats = async (req, res, next) => {
  */
 const getActivity = async (req, res, next) => {
   try {
-    // Return stored activities or default ones
-    const recentActivities = activities.length > 0 ? activities : [
-      {
-        id: '1',
-        type: 'low',
-        message: 'System monitoring active',
-        time: 'Just now'
-      }
-    ];
+    // Fetch recent notifications and map to activities
+    const recentNotifications = await Notification.find({})
+      .sort({ createdAt: -1 })
+      .limit(10)
+      .lean();
+
+    const recentActivities = recentNotifications.map(n => ({
+      id: n._id.toString(),
+      type: n.type === 'weapon' ? 'high' : n.type === 'suspicious' ? 'medium' : 'low',
+      message: n.title,
+      time: new Date(n.createdAt).toLocaleString(),
+    }));
 
     res.json(recentActivities);
   } catch (error) {

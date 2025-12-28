@@ -22,7 +22,8 @@
     "react-native-safe-area-context": "^5.6.2",
     "react-native-screens": "^3.34.0",
     "react-native-vector-icons": "^10.3.0",
-    "react-native-vlc-media-player": "^1.0.98"
+    "react-native-vlc-media-player": "^1.0.98",
+    "socket.io-client": "^4.8.3"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",

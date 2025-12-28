@@ -15,7 +15,7 @@ import {
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { NotificationsAPI, NotificationItem, getNotificationTypeConfig, RootStackParamList } from '../utils';
+import { NotificationsAPI, NotificationItem, getNotificationTypeConfig, RootStackParamList, useSocket } from '../utils';
 
 type NotificationsNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -24,6 +24,7 @@ export default function NotificationsScreen() {
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const { socket } = useSocket();
 
   const fetchNotifications = async () => {
     try {
@@ -75,6 +76,21 @@ export default function NotificationsScreen() {
   useEffect(() => {
     fetchNotifications();
   }, []);
+
+  // Socket listener for real-time notifications
+  useEffect(() => {
+    if (socket) {
+      const handleNotificationCreated = () => {
+        fetchNotifications(); // Refresh the list
+      };
+
+      socket.on('notification-created', handleNotificationCreated);
+
+      return () => {
+        socket.off('notification-created', handleNotificationCreated);
+      };
+    }
+  }, [socket]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);

@@ -20,3 +20,4 @@ export * from './helpers';
 
 // Context Providers
 export { AuthProvider, useAuth } from './AuthContext';
+export { SocketProvider, useSocket } from './SocketContext';

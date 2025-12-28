@@ -7,6 +7,7 @@ import React from 'react';
 import { StatusBar, LogBox } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { AuthProvider } from './src/utils';
+import { SocketProvider } from './src/utils/SocketContext';
 import AppNavigator from './src/navigation/AppNavigator';
 
 // Ignore specific warnings
@@ -19,9 +20,11 @@ function App(): React.JSX.Element {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <StatusBar barStyle="light-content" backgroundColor="#0A1523" />
-      <AuthProvider>
-        <AppNavigator />
-      </AuthProvider>
+      <SocketProvider>
+        <AuthProvider>
+          <AppNavigator />
+        </AuthProvider>
+      </SocketProvider>
     </GestureHandlerRootView>
   );
 }

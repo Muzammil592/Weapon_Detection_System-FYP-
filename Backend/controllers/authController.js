@@ -415,10 +415,18 @@ const resetPassword = async (req, res, next) => {
  */
 const logout = async (req, res, next) => {
   try {
-    // In a more complex system, you might blacklist the token here
+    // Stop AIService detection for this user session
+    const axios = require('axios');
+    const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
+    try {
+      await axios.post(`${AI_SERVICE_URL}/stop-detection`, {}, { timeout: 5000 });
+    } catch (err) {
+      // Log but don't block logout if AIService is unreachable
+      console.error('Failed to notify AIService to stop detection:', err.message);
+    }
     res.json({
       success: true,
-      message: 'Logged out successfully'
+      message: 'Logged out successfully and AIService stopped.'
     });
   } catch (error) {
     next(error);

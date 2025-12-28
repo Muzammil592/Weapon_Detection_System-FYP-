@@ -2,30 +2,51 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity, AppState } from 'react-native';
 import { VLCPlayer } from 'react-native-vlc-media-player';
 import Icon from 'react-native-vector-icons/Ionicons';
-import { UserStorage } from '../utils';
+import { UserStorage, useSocket } from '../utils';
 
-interface CameraData {
-  camera_name: string;
-  stream_url: string;
-  location: string;
-}
 
 export default function LiveFeedScreen() {
+  interface CameraData {
+    camera_name: string;
+    stream_url: string;
+    location: string;
+  }
+
   const [camera, setCamera] = useState<CameraData | null>(null);
   const [loading, setLoading] = useState(true);
   const [streamError, setStreamError] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isBuffering, setIsBuffering] = useState(true);
   const [key, setKey] = useState(0); 
-  
+  const [detectionAlert, setDetectionAlert] = useState<{weaponType: string; confidence: number} | null>(null);
   const vlcRef = useRef<any>(null);
   const appState = useRef(AppState.currentState);
+  const { socket, sendDetectionRequest } = useSocket();
+  const [userName, setUserName] = useState<string>('');
+
+  // Socket listener for weapon detection
+  useEffect(() => {
+    if (socket) {
+      const handleWeaponDetected = (data: { weaponType: string; confidence: number }) => {
+        setDetectionAlert(data);
+        // Auto-hide after 10 seconds
+        setTimeout(() => setDetectionAlert(null), 10000);
+      };
+
+      socket.on('weapon-detected', handleWeaponDetected);
+
+      return () => {
+        socket.off('weapon-detected', handleWeaponDetected);
+      };
+    }
+  }, [socket]);
 
   // 1. Map Nested MongoDB Schema to State
   useEffect(() => {
     const loadCamera = async () => {
       try {
         const userData = await UserStorage.getUser();
+        setUserName(userData?.name || '');
         console.log("DEBUG: Raw User Data from Storage:", userData);
 
         // DATA MAPPING: Based on your log, RTSP is at userData.camera.rtsp_url
@@ -55,6 +76,17 @@ export default function LiveFeedScreen() {
     };
     loadCamera();
   }, [key]);
+
+  // Send detection request when stream is ready and camera/user info is available
+  useEffect(() => {
+    if (isPlaying && camera && userName && sendDetectionRequest) {
+      sendDetectionRequest({
+        stream_url: camera.stream_url,
+        user: userName,
+        location: camera.location,
+      });
+    }
+  }, [isPlaying, camera, userName, sendDetectionRequest]);
 
   const manualReload = useCallback(() => {
     setStreamError(null);
@@ -93,6 +125,15 @@ export default function LiveFeedScreen() {
           <Icon name="refresh-circle" size={35} color="#3EA0FF" />
         </TouchableOpacity>
       </View>
+
+      {detectionAlert && (
+        <View style={styles.alertBanner}>
+          <Icon name="warning" size={24} color="#fff" />
+          <Text style={styles.alertText}>
+            Weapon Detected: {detectionAlert.weaponType} ({(detectionAlert.confidence * 100).toFixed(1)}%)
+          </Text>
+        </View>
+      )}
 
       <View style={styles.videoContainer}>
         {camera?.stream_url ? (
@@ -184,5 +225,7 @@ const styles = StyleSheet.create({
   statusBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1A2634', alignSelf: 'flex-start', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
   dot: { width: 8, height: 8, borderRadius: 4, marginRight: 8 },
   statusLabel: { color: '#fff', fontSize: 12, fontWeight: 'bold' },
-  debugText: { color: '#4A5568', fontSize: 10, marginTop: 15 }
+  debugText: { color: '#4A5568', fontSize: 10, marginTop: 15 },
+  alertBanner: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FF4C4C', paddingHorizontal: 20, paddingVertical: 15, marginHorizontal: 20, marginVertical: 10, borderRadius: 10 },
+  alertText: { color: '#fff', fontSize: 16, fontWeight: 'bold', marginLeft: 10 }
 });

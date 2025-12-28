@@ -34,7 +34,6 @@ function MainTabs() {
       screenOptions={({ route }) => ({
         tabBarIcon: ({ focused, color, size }) => {
           let iconName: string;
-
           switch (route.name) {
             case 'Dashboard':
               iconName = focused ? 'home' : 'home-outline';
@@ -51,7 +50,6 @@ function MainTabs() {
             default:
               iconName = 'help-circle-outline';
           }
-
           return <Icon name={iconName} size={size} color={color} />;
         },
         tabBarActiveTintColor: '#3EA0FF',
@@ -81,10 +79,15 @@ function MainTabs() {
         component={LiveFeedScreen}
         options={{ title: 'Live Feed' }}
       />
+      {/* Alerts tab removed as requested */}
       <Tab.Screen 
-        name="Notifications" 
-        component={NotificationsScreen}
-        options={{ title: 'Alerts' }}
+        name="AllNotifications" 
+        component={require('../screens/AllNotificationsScreen').default}
+        options={{ title: 'Notifications', tabBarLabel: 'Notifications',
+          tabBarIcon: ({ focused, color, size }) => (
+            <Icon name={focused ? 'notifications' : 'notifications-outline'} size={size} color={color} />
+          )
+        }}
       />
       <Tab.Screen 
         name="Explore" 

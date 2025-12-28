@@ -124,5 +124,6 @@ export type MainTabsParamList = {
   Dashboard: undefined;
   LiveFeed: undefined;
   Notifications: undefined;
+  AllNotifications: undefined;
   Explore: undefined;
 };

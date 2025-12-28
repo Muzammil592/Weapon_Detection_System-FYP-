@@ -126,10 +126,15 @@ export function AuthProvider({ children }: AuthProviderProps) {
   }, []);
 
   // Logout function - now returns void, navigation handled by consumer
+  const { socket } = require('./SocketContext');
   const logout = useCallback(async () => {
     setState(prev => ({ ...prev, isLoading: true }));
 
     try {
+      // Emit stop-detection event if socket is connected
+      if (socket && socket.connected && state.user) {
+        socket.emit('stop-detection', { user: state.user.name });
+      }
       await UserStorage.logout();
       setState({
         ...initialState,
@@ -142,7 +147,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         isLoading: false,
       });
     }
-  }, []);
+  }, [socket, state.user]);
 
   // Clear error
   const clearError = useCallback(() => {
